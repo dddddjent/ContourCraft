@@ -375,7 +375,8 @@ class GarmentCreator:
         simulator = Simulator(checkpoint_path, sequence_loader=sequence_loader)
 
         trajectories_dict = simulator.run_zeropos(garment_name, n_steps=n_steps, gender=self.gender,
-                                                   garment_dicts_dir=self.garment_dicts_dir)
+                                                   garment_dicts_dir=self.garment_dicts_dir,
+                                                   body_model_root=self.body_models_root)
         relaxed_verts = trajectories_dict['pred'][-1]
 
         garment_dict_path = Path(self.garment_dicts_dir) / f'{garment_name}.pkl'
@@ -592,4 +593,3 @@ def create_smplx_pose_file(source_sequence_file, out_path, index):
     new_dict['reye_pose'] = smplx_sequence['pose_eye'][index:index+1, 3:6]
 
     pickle_dump(new_dict, out_path)
-

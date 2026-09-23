@@ -42,8 +42,9 @@ class SequenceLoader:
             random_betas -= self.mcfg.betas_scale
             sequence['betas'] = random_betas
 
-        # zero-out hand pose (eliminates unrealistic hand poses)
-        sequence['body_pose'][:, -6:] *= 0
+        # Preserve exported fitted colliders; retain the author's AMASS default.
+        if not getattr(self.mcfg, 'preserve_wrist_pose', False):
+            sequence['body_pose'][:, -6:] *= 0
 
         # zero-out all SMPL beta parameters
         if hasattr(self.mcfg, 'zero_betas') and self.mcfg.zero_betas:
@@ -141,5 +142,4 @@ class SequenceLoader:
 
         return sequence
     
-
 

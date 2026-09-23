@@ -6,7 +6,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 import numpy as np
 import torch
@@ -93,6 +93,8 @@ class Config:
 
     initial_ts: float = II("experiment.initial_ts")
     regular_ts: float = II("experiment.regular_ts")
+    # Target captures may have a different rate from the author's AMASS prior.
+    finetune_ts: Optional[float] = None
 
 
 class Runner(nn.Module):
@@ -199,7 +201,7 @@ class Runner(nn.Module):
         sample = self.prepare_sample(sample, ft=ft)
 
         for i in pbar:
-            sample_step = self.collect_sample(sample, i, prev_out_sample)
+            sample_step = self.collect_sample(sample, i, prev_out_sample, ft=ft)
 
             if i == 0:
                 sample_step, sample = self.update_sample_1st_step(sample_step, sample)
@@ -278,12 +280,18 @@ class Runner(nn.Module):
         return loss_dict, loss_weight_dict, gradient_dict, metrics_dict
 
 
-    def collect_sample(self, sample, idx, prev_out_dict=None, random_ts=False, is_short=False):
+    def collect_sample(self, sample: Batch, idx: int,
+                       prev_out_dict: Optional[Batch] = None,
+                       random_ts: bool = False, is_short: bool = False,
+                       ft: bool = False) -> Batch:
         sample_step = copy_pyg_batch(sample)
 
         # coly fields from the previous step (pred_pos -> pos, pos->prev_pos)
         sample_step = self.sample_collector.copy_from_prev(sample_step, prev_out_dict)
         ts = self.mcfg.regular_ts
+        if ft and self.mcfg.finetune_ts is not None:
+            ts = self.mcfg.finetune_ts
+            assert ts > 0, 'finetune_ts must be positive'
 
         if idx > 0:
             sample_step = self.sample_collector.lookup2target(sample_step, idx)
@@ -530,7 +538,7 @@ class Runner(nn.Module):
             else:
                 prev = prev_out_sample            
              
-            sample_step = self.collect_sample(sample, i, prev)
+            sample_step = self.collect_sample(sample, i, prev, ft=True)
 
 
             sample_step = self.safecheck_solver.mark_penetrating_faces(sample_step, object='obstacle', use_target=True) 
@@ -625,14 +633,15 @@ def make_checkpoint(runner, aux_modules, cfg, global_step):
         checkpoint_path = os.path.join(checkpoints_dir, f"step_{global_step:010d}.pth")
         print('Saving checkpoint to', checkpoint_path)
 
-        save_checkpoint(runner, aux_modules, cfg, checkpoint_path)
+        save_checkpoint(runner, aux_modules, cfg, checkpoint_path, global_step=global_step)
 
 
 
 
 
 def run_epoch(runner: Runner, aux_modules: dict, dataloaders_dict: DataLoader,
-               cfg: DictConfig, writer=None, global_step=None):
+               cfg: DictConfig, writer: object = None, global_step: int | None = None,
+               stop_requested: Callable[[], bool] | None = None) -> int:
     global_step = global_step or 0
     runner.model.eval() # Don't update collected statistics
 
@@ -658,14 +667,14 @@ def run_epoch(runner: Runner, aux_modules: dict, dataloaders_dict: DataLoader,
     ft_iter = dataloader_ft.__iter__()
     long_iter = dataloader_long.__iter__()
 
-    last_step = 'long'
+    origin = cfg.restart.training_origin
+    if origin is None:
+        origin = cfg.restart.step_start or 0
     for i in prbar:
-        global_step += 1
-
-        if cfg.experiment.max_iter is not None and global_step > cfg.experiment.max_iter:
+        if stop_requested is not None and stop_requested():
             break
 
-        if last_step == 'long':
+        if (global_step - origin) % 2 == 0:
             curr_step = 'ft'
             sample = next(ft_iter)
         else:
@@ -674,11 +683,10 @@ def run_epoch(runner: Runner, aux_modules: dict, dataloaders_dict: DataLoader,
 
         
 
-        last_step = curr_step
         sample = move2device(sample, cfg.device)
 
         B = sample.num_graphs
-        sample = add_field_to_pyg_batch(sample, 'iter', [global_step] * B, 'cloth', reference_key=None)
+        sample = add_field_to_pyg_batch(sample, 'iter', [global_step + 1] * B, 'cloth', reference_key=None)
 
         if curr_step == 'ft':
             optimizer_list = [optimizer_model, optimizer_material]
@@ -692,6 +700,8 @@ def run_epoch(runner: Runner, aux_modules: dict, dataloaders_dict: DataLoader,
         else:
             raise Exception(f'Wrong step label {curr_step}')
 
+        global_step += 1
+
         if writer is not None:
             writer.write_dict(ld_to_write)
 
@@ -699,4 +709,3 @@ def run_epoch(runner: Runner, aux_modules: dict, dataloaders_dict: DataLoader,
 
 
     return global_step
-

@@ -1,0 +1,24 @@
+# Python 3.10 and NumPy <1.24 retain the released SMPL/chumpy model support.
+numpy==1.23.5
+numba==0.60.0
+torch-geometric==2.4.0
+cudf-cu13==25.10.0
+cugraph-cu13==25.10.1
+chumpy==0.70
+smplx==0.1.28
+trimesh==3.23.5
+omegaconf==2.3.0
+einops
+iopath
+matplotlib
+munch
+networkx
+pandas<2.3
+scikit-image<0.25
+scikit-learn
+scipy<1.16
+PyYAML
+tqdm
+wandb
+loguru
+huepy

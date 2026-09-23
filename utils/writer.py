@@ -3,7 +3,7 @@ from typing import Dict
 
 import numpy as np
 import wandb
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 from utils.defaults import DEFAULTS
 
@@ -31,11 +31,22 @@ def collect_config(config_dict, prefix=''):
 
 
 class WandbWriter(Writer):
-    def __init__(self, mcfg):
+    def __init__(self, mcfg: DictConfig) -> None:
         super().__init__(mcfg)
         os.makedirs(DEFAULTS.experiment_root, exist_ok=True)
         flat_config = collect_config(OmegaConf.to_container(mcfg))
         project = DEFAULTS.project_name if mcfg.experiment.use_writer else "dummy"
+
+        if os.environ.get('WANDB_MODE') == 'offline':
+            run = wandb.init(name=mcfg.config.split('/')[-1], project=project,
+                             dir=DEFAULTS.experiment_root, config=flat_config,
+                             mode='offline')
+            assert run is not None
+            self.initialized = True
+            mcfg.run_dir = os.path.dirname(run.dir)
+            if mcfg.step_start is not None:
+                wandb.log({}, step=mcfg.step_start)
+            return
 
         try:
             api = wandb.Api()

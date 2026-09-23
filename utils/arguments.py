@@ -38,6 +38,8 @@ class RestartConfig:
     checkpoint_path: Optional[str] = None  
     step_start: Optional[int] = None  
     load_optimizer: bool = True
+    resume: bool = False
+    training_origin: Optional[int] = None
 
 @dataclass
 class MainConfig:
@@ -269,17 +271,33 @@ def create_modules(modules: dict, config: DictConfig, create_aux_modules: bool=T
     dataloader_ms = create_dataloader_modules(modules, config)
     return dataloader_ms, runner_module, runner, aux_modules
 
-def load_from_checkpoint(cfg, runner, aux_modules):
+def load_from_checkpoint(cfg: DictConfig, runner: torch.nn.Module, aux_modules: dict) -> tuple:
 
     if cfg.restart.checkpoint_path is None:
         return runner, aux_modules
     
     checkpoint_path = Path(DEFAULTS.data_root) / cfg.restart.checkpoint_path
 
-    if not os.path.exists(checkpoint_path):
-        return runner, aux_modules
+    assert checkpoint_path.is_file(), f'Missing checkpoint: {checkpoint_path}'
 
-    sd = torch.load(checkpoint_path)
+    sd = torch.load(checkpoint_path, weights_only=False)
+    if cfg.restart.resume:
+        required = {'training_module', 'material_stack', 'optimizer', 'optimizer_material', 'scheduler', 'config'}
+        if 'scheduler_material' in aux_modules:
+            required.add('scheduler_material')
+        assert required.issubset(sd), f'Incomplete resume checkpoint: missing {sorted(required - sd.keys())}'
+        assert cfg.restart.load_optimizer, 'Resume requires optimizer restoration'
+        assert cfg.restart.step_start is not None, 'Resume requires the selected checkpoint step'
+        completed = sd.get('global_step', cfg.restart.step_start)
+        assert completed == cfg.restart.step_start, 'Checkpoint global_step differs from selected step'
+        saved_target = sd['config']['dataloaders']['finetune']['dataset']['finetune']
+        target = cfg.dataloaders.finetune.dataset.finetune
+        for field in ('garment_dicts_dir', 'body_sequence_root', 'registration_root'):
+            assert saved_target[field] == target[field], f'Resume experiment mismatch: {field}'
+        assert saved_target.get('body_model', 'smplx') == target.get('body_model', 'smplx'), 'Resume body model mismatch'
+        assert sd['config']['material_stack'] == OmegaConf.to_container(cfg.material_stack), 'Resume material configuration mismatch'
+        assert cfg.restart.training_origin is not None, 'Resume requires the original training step'
+        cfg.step_start = completed
     runner.load_state_dict(sd['training_module'])
 
     print(f'LOADED CHECKPOINT FROM {checkpoint_path}')
@@ -295,7 +313,12 @@ def load_from_checkpoint(cfg, runner, aux_modules):
                 print(f'{k} LOADED!')
                 v.load_state_dict(sd[k])
 
-        if 'scheduler' in aux_modules:
+        if 'scheduler' in aux_modules and not cfg.restart.resume:
             aux_modules['scheduler'].base_lrs = base_lrs
+
+    if cfg.restart.resume and 'rng_state' in sd:
+        aux_modules['_resume_rng_state'] = sd['rng_state']
+    elif cfg.restart.resume:
+        print('Checkpoint has no saved RNG state; resume will use the training seed and fresh data sampling.')
 
     return runner, aux_modules

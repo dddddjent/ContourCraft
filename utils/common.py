@@ -3,6 +3,7 @@ import enum
 import math
 import os
 import random
+from pathlib import Path
 
 import einops
 import numpy as np
@@ -178,7 +179,23 @@ def unsorted_segment_sum(data, index, dim_sum: int, dim_input: int, dim_index: i
     return out
 
 
-def save_checkpoint(runner, aux_modules, config, file):
+def capture_rng_state() -> dict:
+    state = {'python': random.getstate(), 'numpy': np.random.get_state(), 'torch': torch.get_rng_state()}
+    if torch.cuda.is_available():
+        state['cuda'] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def restore_rng_state(state: dict) -> None:
+    random.setstate(state['python'])
+    np.random.set_state(state['numpy'])
+    torch.set_rng_state(state['torch'].cpu())
+    if 'cuda' in state:
+        torch.cuda.set_rng_state_all([value.cpu() for value in state['cuda']])
+
+
+def save_checkpoint(runner: torch.nn.Module, aux_modules: dict, config: object,
+                    file: str | Path, global_step: int | None = None) -> None:
     """
     Save a checkpoint of the training state.
     :param runner: Runner object
@@ -191,11 +208,18 @@ def save_checkpoint(runner, aux_modules, config, file):
     out_dict = dict()
     out_dict['training_module'] = runner.state_dict()
     out_dict['config'] = OmegaConf.to_container(config)
+    if global_step is not None:
+        out_dict['global_step'] = global_step
+        out_dict['config']['step_start'] = global_step
+    out_dict['rng_state'] = capture_rng_state()
     for k, v in aux_modules.items():
         if hasattr(v, 'state_dict'):
             out_dict[k] = v.state_dict()
 
-    torch.save(out_dict, file)
+    target = Path(file)
+    temporary = target.with_name(target.name + '.tmp')
+    torch.save(out_dict, temporary)
+    os.replace(temporary, target)
 
 
 def make_pervertex_tensor_from_lens(lens, val_tensor):

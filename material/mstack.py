@@ -215,16 +215,18 @@ class MaterialStack(torch.nn.Module):
                 material_dict[garment_name][material_key] = value
         return material_dict
     
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict: dict, strict: bool = True) -> object:
         material_dict = self._state_dict_to_material_dict(state_dict)
-
-        for garment_name, material_state_dict in material_dict.items():
-            material_module = self.material_class(self.material_config, state_dict=material_state_dict)
-            self.materials[garment_name] = material_module
-        pass
+        if len(self.materials) == 0:
+            for garment_name, material_state_dict in material_dict.items():
+                self.materials[garment_name] = self.material_class(
+                    self.material_config, state_dict=material_state_dict)
+        # Existing modules must retain Parameter identities: their optimizers
+        # already own these objects during training resume.
+        return super().load_state_dict(state_dict, strict=strict)
     
     
 
 def create_optimizer(module, config):
     optimizer = torch.optim.Adam(module.parameters(), lr=config.lr)
-    return optimizer 
+    return optimizer

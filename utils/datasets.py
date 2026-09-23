@@ -58,13 +58,17 @@ def make_fromanypose_dataloader(pose_sequence_type, pose_sequence_path, garment_
     dataloader = DataloaderModule(dataset, dataloader_config).create_dataloader()
     return dataloader
 
-def build_smpl_bygender(smpl_root, model_type='smpl', use_pca=False):
+def build_smpl_bygender(smpl_root: str | Path, model_type: str = 'smpl',
+                       use_pca: bool = False,
+                       flat_hand_mean: bool = False) -> Dict[str, SMPL]:
     smpl_root = Path(smpl_root)
     smpl_model_dict = {}
 
     for gender in ['male', 'female', 'neutral']:
         try:
-            smpl_model_dict[gender] = smplx.create(smpl_root, model_type=model_type, gender=gender, use_pca=use_pca)
+            smpl_model_dict[gender] = smplx.create(
+                smpl_root, model_type=model_type, gender=gender,
+                use_pca=use_pca, flat_hand_mean=flat_hand_mean)
         except Exception as e:
             print(f'WARNING: {gender} model not found in {smpl_root}.')
     
