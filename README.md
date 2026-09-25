@@ -16,7 +16,14 @@ TODO list:
 - [ ] Automatic outfit re-meshing to support outfits of arbitrary resolution
 
 ## Installation
-Follow [INSTALL.md](INSTALL.md) to install the environment and download data required for running ContourCraft.
+From the workspace root, install the `ccraft` CUDA 13 environment for A100,
+A40, H200, and RTX 5080:
+
+```sh
+bash ContourCraft/setup.sh
+```
+
+Follow [INSTALL.md](INSTALL.md) for the required model and motion data.
 
 ## Inference
 The jupyter notebook [Inference.ipynb](Inference.ipynb) contains an example of how to run inference of a trained ContourCraft model given a garment and a pose sequence.
