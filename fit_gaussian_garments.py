@@ -403,7 +403,8 @@ def main() -> None:
     if args.prepare_only:
         return
     env = dict(os.environ, CCRAFT_DATA_ROOT=str(ccraft_data), CCRAFT_CMU_ROOT=str(args.cmu_root.resolve()),
-               CCRAFT_PROJECT_DIR=str(Path(__file__).resolve().parent), WANDB_MODE='offline')
+               CCRAFT_PROJECT_DIR=str(Path(__file__).resolve().parent),
+               CCRAFT_EXPERIMENT_ROOT=str(output / 'stage4/logs'), WANDB_MODE='offline')
     os.environ.update(env)
     if not args.resume:
         # End the import process before training so its CUDA context and caches are released.
